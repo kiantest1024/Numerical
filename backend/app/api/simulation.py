@@ -4,15 +4,14 @@
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import asyncio
 import json
-import uuid
 from datetime import datetime
 
 from ..models.game_config import GameConfiguration
 from ..models.simulation_result import (
-    SimulationRequest, SimulationResponse, SimulationResult, SimulationProgress
+    SimulationRequest, SimulationResponse, SimulationResult
 )
 from ..core.simulation_engine import UniversalSimulationEngine
 
@@ -55,30 +54,25 @@ async def start_simulation(request: SimulationRequest, background_tasks: Backgro
 
 async def run_simulation_task(simulation_id: str, engine: UniversalSimulationEngine):
     """后台运行模拟任务"""
-    import asyncio
     import concurrent.futures
+    import time
 
     def run_sync_simulation():
         """在线程池中运行同步模拟"""
         try:
-            # 简化的同步模拟逻辑
             engine.start_time = datetime.now()
             engine.is_running = True
             engine.should_stop = False
 
-            # 运行简化的模拟
-            for round_num in range(1, min(engine.sim_config.rounds, 100) + 1):  # 限制最多100轮
+            for round_num in range(1, min(engine.sim_config.rounds, 100) + 1):
                 if engine.should_stop:
                     break
 
                 engine.current_round = round_num
-                # 简化的轮次模拟
                 round_result = engine.simulate_round(round_num)
                 engine.round_results.append(round_result)
 
-                # 每10轮休息一下
                 if round_num % 10 == 0:
-                    import time
                     time.sleep(0.1)
 
             # 生成结果
@@ -214,7 +208,7 @@ async def get_simulation_progress(simulation_id: str):
                 "status": result.status,
                 "completed": True,
                 "progress_percentage": 100.0 if result.status == "completed" else 0.0,
-                "final_summary": result.summary.dict() if result.summary else None
+                "final_summary": result.summary.model_dump() if result.summary else None
             }
         raise HTTPException(status_code=404, detail="模拟未找到")
 
@@ -238,6 +232,12 @@ async def get_simulation_progress(simulation_id: str):
         total_payout = sum(r.total_payout for r in engine.round_results)
         current_rtp = (total_payout / total_bet_amount) if total_bet_amount > 0 else 0.0
 
+        # 计算中奖和未中奖人数统计
+        total_players = sum(r.players_count for r in engine.round_results)
+        total_winners = sum(r.winners_count or 0 for r in engine.round_results)
+        total_non_winners = sum(r.non_winners_count or 0 for r in engine.round_results)
+        winning_rate = (total_winners / total_players) if total_players > 0 else 0.0
+
         # 计算各奖级统计
         prize_stats = {}
         for prize_level in engine.game_rules.prize_levels:
@@ -259,6 +259,24 @@ async def get_simulation_progress(simulation_id: str):
         # 最近10轮的RTP趋势
         recent_rtps = [r.rtp for r in engine.round_results[-10:]]
 
+        # 获取奖池阶段信息
+        jackpot_phase_info = {}
+        if engine.game_rules.jackpot.enabled:
+            return_phase_completed = engine.total_returned_amount >= engine.initial_jackpot_amount
+            if return_phase_completed:
+                current_contribution_rate = engine.game_rules.jackpot.post_return_contribution_rate
+            else:
+                current_contribution_rate = engine.game_rules.jackpot.contribution_rate
+
+            jackpot_phase_info = {
+                "return_phase_completed": return_phase_completed,
+                "current_contribution_rate": current_contribution_rate,
+                "total_returned_amount": engine.total_returned_amount,
+                "initial_jackpot_amount": engine.initial_jackpot_amount,
+                "phase_1_rate": engine.game_rules.jackpot.contribution_rate,
+                "phase_2_rate": engine.game_rules.jackpot.post_return_contribution_rate
+            }
+
         real_time_stats = {
             "completed_rounds": completed_rounds,
             "total_bet_amount": total_bet_amount,
@@ -266,7 +284,14 @@ async def get_simulation_progress(simulation_id: str):
             "current_rtp": current_rtp,
             "prize_stats": prize_stats,
             "recent_rtps": recent_rtps,
-            "current_jackpot": engine.jackpot_pool
+            "current_jackpot": engine.jackpot_pool,
+            "total_sales_amount": engine.total_sales_amount,  # 累计销售金额
+            "jackpot_hits_count": engine.jackpot_hits_count,  # 头奖中出次数
+            "total_players": total_players,  # 总玩家数
+            "total_winners": total_winners,  # 总中奖人数
+            "total_non_winners": total_non_winners,  # 总未中奖人数
+            "winning_rate": winning_rate,  # 中奖率
+            **jackpot_phase_info  # 合并奖池阶段信息
         }
 
     return {
@@ -443,7 +468,7 @@ async def validate_game_config(config: Dict[str, Any]):
         return {
             "valid": True,
             "message": "配置验证通过",
-            "config": game_config.dict()
+            "config": game_config.model_dump()
         }
     except Exception as e:
         return {

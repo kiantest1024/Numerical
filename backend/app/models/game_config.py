@@ -40,14 +40,26 @@ class JackpotConfig(BaseModel):
     """奖池配置"""
     enabled: bool = Field(default=False, description="是否启用奖池")
     initial_amount: float = Field(default=0.0, description="初始奖池金额")
-    contribution_rate: float = Field(default=0.15, description="投注金额进入奖池的比例")
-    return_rate: float = Field(default=0.9, description="奖池返还比例")
+    contribution_rate: float = Field(default=0.15, description="第一阶段：投注金额进入奖池的比例（销售方返还期间）")
+    return_rate: float = Field(default=0.9, description="投注金额返还给销售方的比例（补偿垫付的初始奖池）")
     min_jackpot: float = Field(default=0.0, description="最小奖池保底金额")
-    
-    @validator('contribution_rate', 'return_rate')
+
+    # 新增字段：头奖固定奖金
+    jackpot_fixed_prize: Optional[float] = Field(default=None, description="头奖固定奖金（可选）")
+
+    # 新增字段：第二阶段奖池注入比例
+    post_return_contribution_rate: float = Field(default=0.3, description="第二阶段：投注金额进入奖池的比例（销售方返还完成后）")
+
+    @validator('contribution_rate', 'return_rate', 'post_return_contribution_rate')
     def validate_rates(cls, v):
         if not 0 <= v <= 1:
             raise ValueError("比例必须在0-1之间")
+        return v
+
+    @validator('jackpot_fixed_prize')
+    def validate_jackpot_fixed_prize(cls, v):
+        if v is not None and v < 0:
+            raise ValueError("头奖固定奖金不能为负数")
         return v
 
 

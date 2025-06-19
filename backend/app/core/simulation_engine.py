@@ -44,6 +44,16 @@ class UniversalSimulationEngine:
         # 奖池和资金池
         self.jackpot_pool = self.game_rules.jackpot.initial_amount
         self.funding_pool = 0.0
+
+        # 新增：累计返还金额追踪
+        self.total_returned_amount = 0.0  # 累计返还给销售方的金额（补偿垫付的初始奖池）
+        self.initial_jackpot_amount = self.game_rules.jackpot.initial_amount  # 保存初始奖池金额
+
+        # 新增：销售金额统计
+        self.total_sales_amount = 0.0  # 累计销售金额（除去奖池注入和销售方返还的部分）
+
+        # 新增：头奖中出统计
+        self.jackpot_hits_count = 0  # 头奖中出次数
         
         # 奖级映射
         self.prize_map = self._build_prize_map()
@@ -85,65 +95,138 @@ class UniversalSimulationEngine:
         """检查匹配数量"""
         return len(player_numbers & winning_numbers)
     
-    def process_ticket_contribution(self, ticket_price: float) -> float:
+    def process_ticket_contribution(self, ticket_price: float) -> Dict[str, float]:
         """
         处理单注投注的资金分配
-        返回进入奖池的金额
+        返回资金分配详情
+
+        资金分配逻辑：
+        第一阶段：总下注金额 = 奖池注入 + 销售方返还 + 销售金额
+        第二阶段：总下注金额 = 奖池注入 + 销售金额
         """
         if not self.game_rules.jackpot.enabled:
-            return 0.0
-        
-        contribution_rate = self.game_rules.jackpot.contribution_rate
+            # 如果未启用奖池，全部作为销售金额
+            sales_amount = ticket_price
+            self.total_sales_amount += sales_amount
+            return {
+                'jackpot_contribution': 0.0,
+                'seller_return': 0.0,
+                'sales_amount': sales_amount,
+                'total_returned': self.total_returned_amount,
+                'total_sales': self.total_sales_amount,
+                'current_contribution_rate': 0.0,
+                'return_phase_completed': True
+            }
+
         return_rate = self.game_rules.jackpot.return_rate
-        
-        if self.funding_pool < 0:
-            # 优先偿还资金池
-            repay_amount = min(ticket_price * (1 - return_rate), -self.funding_pool)
-            self.funding_pool += repay_amount
-            # 剩余部分进入奖池
-            jackpot_contrib = ticket_price * contribution_rate * return_rate
+
+        # 根据当前阶段选择奖池注入比例
+        if self.total_returned_amount < self.initial_jackpot_amount:
+            # 第一阶段：销售方返还期间
+            contribution_rate = self.game_rules.jackpot.contribution_rate
         else:
-            # 全部按比例进入奖池
-            jackpot_contrib = ticket_price * contribution_rate
-        
-        self.jackpot_pool += jackpot_contrib
-        return jackpot_contrib
+            # 第二阶段：销售方返还完成后
+            contribution_rate = self.game_rules.jackpot.post_return_contribution_rate
+
+        # 计算奖池注入金额
+        jackpot_contribution = ticket_price * contribution_rate
+
+        # 计算销售方返还金额
+        if self.total_returned_amount < self.initial_jackpot_amount:
+            # 第一阶段：还需要返还给销售方
+            potential_return = ticket_price * return_rate
+            remaining_to_return = self.initial_jackpot_amount - self.total_returned_amount
+            actual_return = min(potential_return, remaining_to_return)
+            self.total_returned_amount += actual_return
+        else:
+            # 第二阶段：不再返还给销售方
+            actual_return = 0.0
+
+        # 计算销售金额（剩余部分）
+        sales_amount = ticket_price - jackpot_contribution - actual_return
+        self.total_sales_amount += sales_amount
+
+        # 奖池注入
+        self.jackpot_pool += jackpot_contribution
+
+        return {
+            'jackpot_contribution': jackpot_contribution,
+            'seller_return': actual_return,
+            'sales_amount': sales_amount,
+            'total_returned': self.total_returned_amount,
+            'total_sales': self.total_sales_amount,
+            'current_contribution_rate': contribution_rate,
+            'return_phase_completed': self.total_returned_amount >= self.initial_jackpot_amount
+        }
     
     def calculate_prize(self, matches: int, winners_count: Dict[int, int]) -> float:
         """计算奖金"""
         if matches not in self.prize_map:
             return 0.0
-        
+
         # 查找对应的奖级配置
         prize_level = None
         for level in self.game_rules.prize_levels:
             if level.match_condition == matches:
                 prize_level = level
                 break
-        
+
         if not prize_level:
             return 0.0
-        
-        # 固定奖金
-        if prize_level.fixed_prize is not None:
+
+        # 非头奖的固定奖金
+        if prize_level.fixed_prize is not None and prize_level.level != 1:
             return prize_level.fixed_prize
-        
-        # 奖池分配
-        if prize_level.prize_percentage is not None and matches == max(self.prize_map.keys()):
-            # 最高奖级使用奖池
-            if winners_count[matches] > 0:
-                total_jackpot = self.jackpot_pool * prize_level.prize_percentage
-                prize_per_winner = total_jackpot / winners_count[matches]
-                
-                # 从奖池中扣除
-                self.jackpot_pool -= total_jackpot
-                # 如果奖池不足，从资金池借贷
-                if self.jackpot_pool < 0:
-                    self.funding_pool += self.jackpot_pool
-                    self.jackpot_pool = 0
-                
-                return prize_per_winner
-        
+
+        # 头奖分配逻辑
+        if prize_level.level == 1 and winners_count[matches] > 0:
+            # 获取头奖固定奖金配置
+            jackpot_fixed_prize = self.game_rules.jackpot.jackpot_fixed_prize
+
+            # 计算奖池分配部分
+            if prize_level.prize_percentage is not None:
+                # 使用奖池的指定百分比
+                total_jackpot_share = self.jackpot_pool * prize_level.prize_percentage
+            else:
+                # 如果没有指定百分比，使用全部奖池
+                total_jackpot_share = self.jackpot_pool
+
+            # 计算每个中奖者的奖池分配
+            jackpot_share_per_winner = total_jackpot_share / winners_count[matches]
+
+            # 计算最终奖金
+            if jackpot_fixed_prize is not None:
+                # 有固定奖金：奖池分配 + 固定奖金
+                final_prize = jackpot_share_per_winner + jackpot_fixed_prize
+            else:
+                # 无固定奖金：只有奖池分配
+                final_prize = jackpot_share_per_winner
+
+            # 🎊 重要：头奖中出后，奖池重置为初始金额
+            self.jackpot_pool = self.initial_jackpot_amount
+
+            # 统计头奖中出次数
+            self.jackpot_hits_count += winners_count[matches]
+
+            # 重置销售方返还状态（重新开始分阶段逻辑）
+            self.total_returned_amount = 0.0
+
+            return final_prize
+
+        # 其他奖级的奖池分配
+        if prize_level.prize_percentage is not None and winners_count[matches] > 0:
+            total_jackpot = self.jackpot_pool * prize_level.prize_percentage
+            prize_per_winner = total_jackpot / winners_count[matches]
+
+            # 从奖池中扣除
+            self.jackpot_pool -= total_jackpot
+            # 如果奖池不足，从资金池借贷
+            if self.jackpot_pool < 0:
+                self.funding_pool += self.jackpot_pool
+                self.jackpot_pool = 0
+
+            return prize_per_winner
+
         return 0.0
     
     def simulate_round(self, round_number: int) -> RoundResult:
@@ -159,28 +242,43 @@ class UniversalSimulationEngine:
         total_bets = 0
         total_bet_amount = 0.0
         total_payout = 0.0
+        total_seller_returns = 0.0  # 销售方返还总额
+        total_sales_amount = 0.0    # 销售金额总额
+        total_jackpot_contributions = 0.0  # 奖池注入总额
         winners_count = defaultdict(int)
         winners_amount = defaultdict(float)
-        
+
         # 模拟每个玩家
+        round_winners_set = set()  # 记录本轮中奖的玩家ID，避免重复计算
+
         for player_id in range(players_count):
             bets_count = random.randint(*self.sim_config.bets_range)
             total_bets += bets_count
-            
+
+            player_won = False  # 标记该玩家是否中奖
+
             for bet_id in range(bets_count):
                 bet_amount = self.game_rules.ticket_price
                 total_bet_amount += bet_amount
-                
+
                 # 处理资金分配
-                self.process_ticket_contribution(bet_amount)
-                
+                contribution_info = self.process_ticket_contribution(bet_amount)
+                total_seller_returns += contribution_info['seller_return']
+                total_sales_amount += contribution_info['sales_amount']
+                total_jackpot_contributions += contribution_info['jackpot_contribution']
+
                 # 生成玩家选号
                 player_numbers = self.generate_player_numbers()
                 matches = self.check_matches(player_numbers, winning_numbers)
-                
+
                 # 统计中奖
                 if matches >= 2:  # 假设2个匹配以上才有奖
                     winners_count[matches] += 1
+                    if not player_won:
+                        player_won = True
+                        round_winners_set.add(player_id)
+
+            # 这里不需要累计统计，因为会在汇总时计算
         
         # 计算奖金
         for matches, count in winners_count.items():
@@ -189,8 +287,8 @@ class UniversalSimulationEngine:
                 total_prize = prize_per_winner * count
                 winners_amount[matches] = total_prize
                 total_payout += total_prize
-        
-        # 计算RTP
+
+        # 计算RTP（只包含中奖奖金，销售方返还不计入RTP）
         rtp = (total_payout / total_bet_amount) if total_bet_amount > 0 else 0.0
         
         # 构建奖级统计
@@ -211,6 +309,10 @@ class UniversalSimulationEngine:
                 probability=probability
             ))
         
+        # 计算本轮中奖和未中奖人数
+        round_winners_count = len(round_winners_set)
+        round_non_winners_count = players_count - round_winners_count
+
         return RoundResult(
             round_number=round_number,
             players_count=players_count,
@@ -220,7 +322,9 @@ class UniversalSimulationEngine:
             rtp=rtp,
             jackpot_amount=self.jackpot_pool,
             prize_stats=prize_stats,
-            winning_numbers=winning_list
+            winning_numbers=winning_list,
+            winners_count=round_winners_count,
+            non_winners_count=round_non_winners_count
         )
     
     def _calculate_combinations(self, n: int, r: int) -> int:
@@ -322,6 +426,11 @@ class UniversalSimulationEngine:
         total_bets = sum(r.total_bets for r in self.round_results)
         total_bet_amount = sum(r.total_bet_amount for r in self.round_results)
         total_payout = sum(r.total_payout for r in self.round_results)
+
+        # 计算中奖和未中奖人数统计
+        total_winners = sum(r.winners_count or 0 for r in self.round_results)
+        total_non_winners = sum(r.non_winners_count or 0 for r in self.round_results)
+        winning_rate = (total_winners / total_players) if total_players > 0 else 0.0
         
         # 计算平均RTP和方差
         rtps = [r.rtp for r in self.round_results]
@@ -332,21 +441,17 @@ class UniversalSimulationEngine:
         initial_jackpot = self.game_rules.jackpot.initial_amount
         final_jackpot = self.jackpot_pool
         
-        # 计算头奖中出次数（假设最高匹配数为头奖）
-        max_matches = max(level.match_condition for level in self.game_rules.prize_levels)
-        jackpot_hits = sum(
-            sum(1 for stat in r.prize_stats if stat.level == 1 and stat.winners_count > 0)
-            for r in self.round_results
-        )
+        # 使用实际统计的头奖中出次数
+        jackpot_hits = self.jackpot_hits_count
         
         # 各奖级汇总
         prize_summary = []
         for prize_level in self.game_rules.prize_levels:
-            total_winners = sum(
+            level_winners = sum(
                 sum(stat.winners_count for stat in r.prize_stats if stat.level == prize_level.level)
                 for r in self.round_results
             )
-            total_amount = sum(
+            level_amount = sum(
                 sum(stat.total_amount for stat in r.prize_stats if stat.level == prize_level.level)
                 for r in self.round_results
             )
@@ -361,8 +466,8 @@ class UniversalSimulationEngine:
             prize_summary.append(PrizeStatistics(
                 level=prize_level.level,
                 name=prize_level.name,
-                winners_count=total_winners,
-                total_amount=total_amount,
+                winners_count=level_winners,
+                total_amount=level_amount,
                 probability=avg_probability
             ))
         
@@ -374,6 +479,9 @@ class UniversalSimulationEngine:
             total_payout=total_payout,
             average_rtp=average_rtp,
             rtp_variance=rtp_variance,
+            total_winners=total_winners,
+            total_non_winners=total_non_winners,
+            winning_rate=winning_rate,
             initial_jackpot=initial_jackpot,
             final_jackpot=final_jackpot,
             jackpot_hits=jackpot_hits,

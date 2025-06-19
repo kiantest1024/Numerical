@@ -11,9 +11,15 @@ import {
   Typography,
   message,
   Select,
-  Table,
+  Tag,
+  Tabs,
+  Form,
+  Input,
+  InputNumber,
+  Switch,
+  Collapse,
   Divider,
-  Tag
+  Table
 } from 'antd';
 import {
   PlayCircleOutlined,
@@ -21,12 +27,17 @@ import {
   ReloadOutlined,
   TrophyOutlined,
   DollarOutlined,
-  PercentageOutlined
+  PercentageOutlined,
+  UserOutlined,
+  FrownOutlined,
+  SaveOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { TabPane } = Tabs;
+const { Panel } = Collapse;
 
 const SimulationPage = () => {
   const [configs, setConfigs] = useState([]);
@@ -35,6 +46,8 @@ const SimulationPage = () => {
   const [progress, setProgress] = useState(null);
   const [realtimeData, setRealtimeData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('existing'); // 'existing' 或 'new'
+  const [configForm] = Form.useForm();
 
   const fetchConfigs = async () => {
     try {
@@ -45,20 +58,7 @@ const SimulationPage = () => {
     }
   };
 
-  const fetchProgress = useCallback(async () => {
-    if (!simulation) return;
 
-    try {
-      const response = await axios.get(`/api/v1/simulation/progress/${simulation.simulation_id}`);
-      setProgress(response.data);
-
-      if (response.data.completed) {
-        setSimulation(prev => ({ ...prev, status: 'completed' }));
-      }
-    } catch (error) {
-      console.error('获取进度失败:', error);
-    }
-  }, [simulation]);
 
   const fetchRealtimeData = useCallback(async () => {
     if (!simulation) return;
@@ -70,6 +70,23 @@ const SimulationPage = () => {
       console.error('获取实时数据失败:', error);
     }
   }, [simulation]);
+
+  const fetchProgress = useCallback(async () => {
+    if (!simulation) return;
+
+    try {
+      const response = await axios.get(`/api/v1/simulation/progress/${simulation.simulation_id}`);
+      setProgress(response.data);
+
+      if (response.data.completed) {
+        setSimulation(prev => ({ ...prev, status: 'completed' }));
+        // 模拟完成时，立即获取最终的实时数据
+        fetchRealtimeData();
+      }
+    } catch (error) {
+      console.error('获取进度失败:', error);
+    }
+  }, [simulation, fetchRealtimeData]);
 
   useEffect(() => {
     fetchConfigs();
@@ -84,6 +101,9 @@ const SimulationPage = () => {
       progressInterval = setInterval(fetchProgress, 1000);
       // 每2秒更新实时数据
       dataInterval = setInterval(fetchRealtimeData, 2000);
+    } else if (simulation && simulation.status === 'completed') {
+      // 模拟完成后，获取一次最终的实时数据
+      fetchRealtimeData();
     }
 
     return () => {
@@ -115,6 +135,59 @@ const SimulationPage = () => {
       message.success('模拟已启动');
     } catch (error) {
       message.error('启动模拟失败: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartNewSimulation = async () => {
+    try {
+      const values = await configForm.validateFields();
+
+      setLoading(true);
+
+      // 构建配置对象
+      const gameConfig = {
+        game_type: "lottery",
+        name: values.game_name || "临时配置",
+        description: values.description || "运行模拟时创建的临时配置",
+        number_range: [1, values.number_range_max || 49],
+        selection_count: values.selection_count || 6,
+        ticket_price: values.ticket_price || 10.0,
+        prize_levels: values.prize_levels || [],
+        jackpot: {
+          enabled: values.jackpot_enabled || false,
+          initial_amount: values.initial_jackpot || 1000.0,
+          contribution_rate: (values.contribution_rate || 30) / 100,
+          post_return_contribution_rate: (values.post_return_contribution_rate || 50) / 100,
+          return_rate: (values.return_rate || 20) / 100,
+          jackpot_fixed_prize: values.jackpot_fixed_prize || null,
+          min_jackpot: values.min_jackpot || 500.0
+        }
+      };
+
+      const simulationConfig = {
+        rounds: values.rounds || 100,
+        players_range: [values.min_players || 50, values.max_players || 100],
+        bets_range: [values.min_bets || 1, values.max_bets || 3],
+        seed: values.seed || null
+      };
+
+      // 启动模拟
+      const simulationResponse = await axios.post('/api/v1/simulation/start', {
+        game_config: gameConfig,
+        simulation_config: simulationConfig
+      });
+
+      setSimulation(simulationResponse.data);
+      setProgress({ progress_percentage: 0, current_round: 0 });
+      message.success('模拟已启动');
+    } catch (error) {
+      if (error.errorFields) {
+        message.error('请检查配置表单中的错误');
+      } else {
+        message.error('启动模拟失败: ' + (error.response?.data?.detail || error.message));
+      }
     } finally {
       setLoading(false);
     }
@@ -184,44 +257,273 @@ const SimulationPage = () => {
       </div>
 
       {/* 配置选择 */}
-      <Card title="选择配置" style={{ marginBottom: 24 }}>
-        <Row gutter={16} align="middle">
-          <Col flex="auto">
-            <Select
-              style={{ width: '100%' }}
-              placeholder="选择已保存的配置"
-              value={selectedConfig}
-              onChange={setSelectedConfig}
-              showSearch
-              optionFilterProp="children"
+      <Card title="模拟配置" style={{ marginBottom: 24 }}>
+        <Tabs activeKey={activeTab} onChange={setActiveTab}>
+          <TabPane tab="使用已保存配置" key="existing">
+            <Row gutter={16} align="middle">
+              <Col flex="auto">
+                <Select
+                  style={{ width: '100%' }}
+                  placeholder="选择已保存的配置"
+                  value={selectedConfig}
+                  onChange={setSelectedConfig}
+                  showSearch
+                  optionFilterProp="children"
+                >
+                  {configs.map(config => (
+                    <Option key={config.name} value={config.name}>
+                      {config.display_name} ({config.game_type})
+                    </Option>
+                  ))}
+                </Select>
+              </Col>
+              <Col>
+                <Space>
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={fetchConfigs}
+                  >
+                    刷新
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<PlayCircleOutlined />}
+                    onClick={handleStartSimulation}
+                    loading={loading}
+                    disabled={!selectedConfig || (simulation && (simulation.status === 'running' || simulation.status === 'started'))}
+                  >
+                    启动模拟
+                  </Button>
+                </Space>
+              </Col>
+            </Row>
+          </TabPane>
+
+          <TabPane tab="创建新配置并运行" key="new">
+            <Form
+              form={configForm}
+              layout="vertical"
+              initialValues={{
+                number_range_max: 49,
+                selection_count: 6,
+                ticket_price: 10.0,
+                rounds: 100,
+                min_players: 50,
+                max_players: 100,
+                min_bets: 1,
+                max_bets: 3,
+                jackpot_enabled: true,
+                initial_jackpot: 1000.0,
+                contribution_rate: 30,
+                post_return_contribution_rate: 50,
+                return_rate: 20,
+                min_jackpot: 500.0
+              }}
             >
-              {configs.map(config => (
-                <Option key={config.name} value={config.name}>
-                  {config.display_name} ({config.game_type})
-                </Option>
-              ))}
-            </Select>
-          </Col>
-          <Col>
-            <Space>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={fetchConfigs}
-              >
-                刷新
-              </Button>
-              <Button
-                type="primary"
-                icon={<PlayCircleOutlined />}
-                onClick={handleStartSimulation}
-                loading={loading}
-                disabled={!selectedConfig || (simulation && (simulation.status === 'running' || simulation.status === 'started'))}
-              >
-                启动模拟
-              </Button>
-            </Space>
-          </Col>
-        </Row>
+              <Collapse defaultActiveKey={['basic', 'simulation']}>
+                <Panel header="基础游戏配置" key="basic">
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        label="游戏名称"
+                        name="game_name"
+                        rules={[{ required: true, message: '请输入游戏名称' }]}
+                      >
+                        <Input placeholder="输入游戏名称" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        label="描述"
+                        name="description"
+                      >
+                        <Input placeholder="输入游戏描述" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item
+                        label="数字范围上限"
+                        name="number_range_max"
+                        rules={[{ required: true, message: '请输入数字范围上限' }]}
+                      >
+                        <InputNumber min={5} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="选择数量"
+                        name="selection_count"
+                        rules={[{ required: true, message: '请输入选择数量' }]}
+                      >
+                        <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="票价 (¥)"
+                        name="ticket_price"
+                        rules={[{ required: true, message: '请输入票价' }]}
+                      >
+                        <InputNumber min={1} step={0.1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Panel>
+
+                <Panel header="模拟配置" key="simulation">
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item
+                        label="模拟轮数"
+                        name="rounds"
+                        rules={[{ required: true, message: '请输入模拟轮数' }]}
+                      >
+                        <InputNumber min={1} max={10000} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="最小玩家数"
+                        name="min_players"
+                        rules={[{ required: true, message: '请输入最小玩家数' }]}
+                      >
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="最大玩家数"
+                        name="max_players"
+                        rules={[{ required: true, message: '请输入最大玩家数' }]}
+                      >
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item
+                        label="最小投注次数"
+                        name="min_bets"
+                        rules={[{ required: true, message: '请输入最小投注次数' }]}
+                      >
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="最大投注次数"
+                        name="max_bets"
+                        rules={[{ required: true, message: '请输入最大投注次数' }]}
+                      >
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="随机种子"
+                        name="seed"
+                      >
+                        <InputNumber style={{ width: '100%' }} placeholder="留空为随机" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Panel>
+
+                <Panel header="奖池配置" key="jackpot">
+                  <Form.Item
+                    label="启用奖池"
+                    name="jackpot_enabled"
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item
+                        label="初始奖池金额 (¥)"
+                        name="initial_jackpot"
+                      >
+                        <InputNumber min={0} step={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="第一阶段奖池注入比例 (%)"
+                        name="contribution_rate"
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="第二阶段奖池注入比例 (%)"
+                        name="post_return_contribution_rate"
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item
+                        label="销售方返还比例 (%)"
+                        name="return_rate"
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="头奖固定奖金 (¥)"
+                        name="jackpot_fixed_prize"
+                      >
+                        <InputNumber min={0} style={{ width: '100%' }} placeholder="留空为奖池金额" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item
+                        label="最小奖池金额 (¥)"
+                        name="min_jackpot"
+                      >
+                        <InputNumber min={0} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Panel>
+              </Collapse>
+
+              <div style={{ marginTop: 16, textAlign: 'center' }}>
+                <Space>
+                  <Button
+                    icon={<SaveOutlined />}
+                    onClick={() => {
+                      // 可以添加保存配置的功能
+                      message.info('保存配置功能待实现');
+                    }}
+                  >
+                    保存配置
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<PlayCircleOutlined />}
+                    onClick={handleStartNewSimulation}
+                    loading={loading}
+                    disabled={simulation && (simulation.status === 'running' || simulation.status === 'started')}
+                  >
+                    启动模拟
+                  </Button>
+                </Space>
+              </div>
+            </Form>
+          </TabPane>
+        </Tabs>
       </Card>
 
       {/* 模拟状态 */}
@@ -315,8 +617,9 @@ const SimulationPage = () => {
             <Col span={6}>
               <Statistic
                 title="当前RTP"
-                value={progress.real_time_stats.current_rtp}
-                precision={4}
+                value={progress.real_time_stats.current_rtp * 100}
+                precision={2}
+                suffix="%"
                 prefix={<PercentageOutlined />}
                 valueStyle={{ color: progress.real_time_stats.current_rtp > 0.8 ? '#3f8600' : '#cf1322' }}
               />
@@ -346,6 +649,44 @@ const SimulationPage = () => {
                 precision={2}
                 prefix={<DollarOutlined />}
                 formatter={(value) => `¥${value.toLocaleString()}`}
+              />
+            </Col>
+          </Row>
+
+          {/* 玩家统计 */}
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={6}>
+              <Statistic
+                title="总玩家数"
+                value={progress.real_time_stats.total_players || 0}
+                prefix={<UserOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="中奖人数"
+                value={progress.real_time_stats.total_winners || 0}
+                prefix={<TrophyOutlined />}
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="未中奖人数"
+                value={progress.real_time_stats.total_non_winners || 0}
+                prefix={<FrownOutlined />}
+                valueStyle={{ color: '#ff4d4f' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="中奖率"
+                value={(progress.real_time_stats.winning_rate || 0) * 100}
+                precision={2}
+                suffix="%"
+                prefix={<PercentageOutlined />}
+                valueStyle={{ color: (progress.real_time_stats.winning_rate || 0) > 0.3 ? '#52c41a' : '#ff4d4f' }}
               />
             </Col>
           </Row>
@@ -398,7 +739,7 @@ const SimulationPage = () => {
                       key={index}
                       color={rtp > 0.8 ? 'green' : rtp > 0.7 ? 'orange' : 'red'}
                     >
-                      {rtp.toFixed(4)}
+                      {(rtp * 100).toFixed(2)}%
                     </Tag>
                   ))}
                 </Space>
@@ -417,8 +758,8 @@ const SimulationPage = () => {
                 {realtimeData.chart_data.rtp_trend && realtimeData.chart_data.rtp_trend.length > 0 ? (
                   <div style={{ textAlign: 'center' }}>
                     <p>数据点数: {realtimeData.chart_data.rtp_trend.length}</p>
-                    <p>最新RTP: {realtimeData.chart_data.rtp_trend[realtimeData.chart_data.rtp_trend.length - 1]?.toFixed(4)}</p>
-                    <p>平均RTP: {(realtimeData.chart_data.rtp_trend.reduce((a, b) => a + b, 0) / realtimeData.chart_data.rtp_trend.length).toFixed(4)}</p>
+                    <p>最新RTP: {(realtimeData.chart_data.rtp_trend[realtimeData.chart_data.rtp_trend.length - 1] * 100)?.toFixed(2)}%</p>
+                    <p>平均RTP: {((realtimeData.chart_data.rtp_trend.reduce((a, b) => a + b, 0) / realtimeData.chart_data.rtp_trend.length) * 100).toFixed(2)}%</p>
                   </div>
                 ) : (
                   <p style={{ textAlign: 'center', color: '#999' }}>暂无数据</p>

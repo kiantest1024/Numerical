@@ -32,6 +32,7 @@ const ConfigPage = () => {
   const [loading, setLoading] = useState(false);
   const [templates, setTemplates] = useState({});
   const [savedConfigs, setSavedConfigs] = useState([]);
+  const [activeTab, setActiveTab] = useState('1');
   const [prizelevels, setPrizeLevels] = useState([
     {
       level: 1,
@@ -123,10 +124,14 @@ const ConfigPage = () => {
     try {
       const response = await axios.get(`/api/v1/config/load/${configName}`);
       const config = response.data.config;
-      
+
       form.setFieldsValue(config);
       setPrizeLevels(config.game_rules.prize_levels);
-      message.success(`已加载配置: ${configName}`);
+
+      // 切换到编辑标签页
+      setActiveTab('1');
+
+      message.success(`已加载配置: ${configName}，可以开始编辑`);
     } catch (error) {
       message.error('加载配置失败');
     }
@@ -251,7 +256,7 @@ const ConfigPage = () => {
             type="link"
             onClick={() => handleLoadConfig(record.name)}
           >
-            加载
+            编辑
           </Button>
           <Popconfirm
             title="确定删除此配置吗？"
@@ -273,7 +278,7 @@ const ConfigPage = () => {
         <p>设置游戏规则、奖级配置和模拟参数</p>
       </div>
 
-      <Tabs defaultActiveKey="1">
+      <Tabs activeKey={activeTab} onChange={setActiveTab}>
         <TabPane tab="配置编辑" key="1">
           <Card title="配置模板" style={{ marginBottom: 24 }}>
             <Space wrap>
@@ -422,9 +427,9 @@ const ConfigPage = () => {
               >
                 <Switch />
               </Form.Item>
-              
+
               <Row gutter={16}>
-                <Col span={12}>
+                <Col span={6}>
                   <Form.Item
                     name={['game_rules', 'jackpot', 'initial_amount']}
                     label="初始奖池金额"
@@ -436,10 +441,11 @@ const ConfigPage = () => {
                     />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col span={6}>
                   <Form.Item
                     name={['game_rules', 'jackpot', 'contribution_rate']}
-                    label="注入比例"
+                    label="第一阶段注入比例"
+                    tooltip="销售方返还期间的奖池注入比例"
                   >
                     <InputNumber
                       min={0}
@@ -450,7 +456,85 @@ const ConfigPage = () => {
                     />
                   </Form.Item>
                 </Col>
+                <Col span={6}>
+                  <Form.Item
+                    name={['game_rules', 'jackpot', 'post_return_contribution_rate']}
+                    label="第二阶段注入比例"
+                    tooltip="销售方返还完成后的奖池注入比例"
+                  >
+                    <InputNumber
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      style={{ width: '100%' }}
+                      placeholder="0.3"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item
+                    name={['game_rules', 'jackpot', 'return_rate']}
+                    label="销售方返还比例"
+                  >
+                    <InputNumber
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      style={{ width: '100%' }}
+                      placeholder="0.9"
+                    />
+                  </Form.Item>
+                </Col>
               </Row>
+
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    name={['game_rules', 'jackpot', 'jackpot_fixed_prize']}
+                    label="头奖固定奖金（可选）"
+                  >
+                    <InputNumber
+                      min={0}
+                      style={{ width: '100%' }}
+                      placeholder="留空则只分配奖池"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name={['game_rules', 'jackpot', 'min_jackpot']}
+                    label="最小奖池保底金额"
+                  >
+                    <InputNumber
+                      min={0}
+                      style={{ width: '100%' }}
+                      placeholder="最小奖池金额"
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <div style={{ background: '#f6f8fa', padding: '12px', borderRadius: '6px', marginTop: '16px' }}>
+                <h4 style={{ margin: '0 0 8px 0', color: '#24292e' }}>奖池规则说明：</h4>
+                <ul style={{ margin: 0, paddingLeft: '20px', color: '#586069' }}>
+                  <li><strong>第一阶段（销售方返还期间）</strong>：</li>
+                  <ul style={{ paddingLeft: '20px' }}>
+                    <li>总下注金额 = 奖池注入 + 销售方返还 + 销售金额</li>
+                    <li>奖池注入：每注投注金额 × 第一阶段注入比例</li>
+                    <li>销售方返还：每注投注金额 × 销售方返还比例（补偿垫付的初始奖池）</li>
+                    <li>销售金额：剩余部分（总下注金额 - 奖池注入 - 销售方返还）</li>
+                  </ul>
+                  <li><strong>阶段转换</strong>：当累计返还给销售方的金额达到初始奖池金额后，停止返还，进入第二阶段</li>
+                  <li><strong>第二阶段（返还完成后）</strong>：</li>
+                  <ul style={{ paddingLeft: '20px' }}>
+                    <li>总下注金额 = 奖池注入 + 销售金额</li>
+                    <li>奖池注入：每注投注金额 × 第二阶段注入比例</li>
+                    <li>销售金额：剩余部分（总下注金额 - 奖池注入）</li>
+                  </ul>
+                  <li><strong>头奖分配</strong>：如果设置了固定奖金，则为(奖池金额÷中奖人数)+固定奖金；如果未设置固定奖金，则为奖池金额÷中奖人数</li>
+                  <li><strong>奖池重置</strong>：每次有玩家中头奖后，奖池会重新初始化为初始奖池金额，销售方返还状态也会重置，重新开始分阶段逻辑</li>
+                </ul>
+              </div>
             </Card>
 
             <Card title="模拟配置" style={{ marginBottom: 24 }}>

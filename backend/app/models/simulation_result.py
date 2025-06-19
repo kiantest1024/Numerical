@@ -27,6 +27,8 @@ class RoundResult(BaseModel):
     jackpot_amount: float = Field(..., description="奖池金额")
     prize_stats: List[PrizeStatistics] = Field(..., description="各奖级统计")
     winning_numbers: Optional[List[int]] = Field(None, description="开奖号码")
+    winners_count: Optional[int] = Field(None, description="中奖人数")
+    non_winners_count: Optional[int] = Field(None, description="未中奖人数")
 
 
 class SimulationSummary(BaseModel):
@@ -38,6 +40,11 @@ class SimulationSummary(BaseModel):
     total_payout: float = Field(..., description="总派奖金额")
     average_rtp: float = Field(..., description="平均返奖率")
     rtp_variance: float = Field(..., description="返奖率方差")
+
+    # 中奖统计
+    total_winners: Optional[int] = Field(None, description="总中奖人数")
+    total_non_winners: Optional[int] = Field(None, description="总未中奖人数")
+    winning_rate: Optional[float] = Field(None, description="中奖率")
     
     # 奖池统计
     initial_jackpot: float = Field(..., description="初始奖池")

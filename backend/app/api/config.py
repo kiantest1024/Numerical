@@ -315,17 +315,53 @@ async def list_configs(db: Session = Depends(get_db)):
 
 
 @router.delete("/delete/{config_name}")
-async def delete_config(config_name: str):
+async def delete_config(config_name: str, db: Session = Depends(get_db)):
     """删除配置"""
-    config_file = os.path.join(CONFIG_DIR, f"{config_name}.json")
-    
-    if not os.path.exists(config_file):
-        raise HTTPException(status_code=404, detail="配置文件未找到")
-    
     try:
-        os.remove(config_file)
-        return {"message": f"配置 '{config_name}' 删除成功"}
-        
+        # 首先尝试从数据库删除
+        deleted_from_db = False
+        try:
+            config_record = DatabaseService.get_game_config(db, config_name)
+            if config_record:
+                DatabaseService.delete_game_config(db, config_name)
+                deleted_from_db = True
+
+                # 记录日志
+                DatabaseService.log_system_event(
+                    db, "INFO", f"配置 '{config_name}' 从数据库删除成功",
+                    module="config", function="delete_config", config_name=config_name
+                )
+        except Exception as db_error:
+            print(f"数据库删除失败: {db_error}")
+
+        # 尝试删除文件（如果存在）
+        config_file = os.path.join(CONFIG_DIR, f"{config_name}.json")
+        deleted_from_file = False
+        if os.path.exists(config_file):
+            try:
+                os.remove(config_file)
+                deleted_from_file = True
+            except Exception as file_error:
+                print(f"文件删除失败: {file_error}")
+
+        # 检查是否成功删除
+        if deleted_from_db or deleted_from_file:
+            delete_sources = []
+            if deleted_from_db:
+                delete_sources.append("数据库")
+            if deleted_from_file:
+                delete_sources.append("文件")
+
+            return {
+                "success": True,
+                "message": f"配置 '{config_name}' 删除成功",
+                "deleted_from": delete_sources
+            }
+        else:
+            raise HTTPException(status_code=404, detail="配置未找到")
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除配置失败: {str(e)}")
 
