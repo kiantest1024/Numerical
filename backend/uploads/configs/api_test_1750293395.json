@@ -1,0 +1,51 @@
+{
+  "game_rules": {
+    "game_type": "lottery",
+    "name": "API测试42选6彩票",
+    "description": "API测试用的42选6彩票游戏",
+    "number_range": [
+      1,
+      42
+    ],
+    "selection_count": 6,
+    "ticket_price": 20.0,
+    "prize_levels": [
+      {
+        "level": 1,
+        "name": "一等奖",
+        "match_condition": 6,
+        "fixed_prize": null,
+        "prize_percentage": 0.9
+      },
+      {
+        "level": 2,
+        "name": "二等奖",
+        "match_condition": 5,
+        "fixed_prize": 50000.0,
+        "prize_percentage": null
+      }
+    ],
+    "jackpot": {
+      "enabled": true,
+      "initial_amount": 10000000.0,
+      "contribution_rate": 0.15,
+      "return_rate": 0.9,
+      "min_jackpot": 5000000.0
+    }
+  },
+  "simulation_config": {
+    "rounds": 50,
+    "players_range": [
+      1000,
+      2000
+    ],
+    "bets_range": [
+      5,
+      10
+    ],
+    "seed": 12345
+  },
+  "id": "api_test_1750293395",
+  "created_at": "2025-06-19T08:36:35.003919",
+  "updated_at": "2025-06-19T08:36:35.003919"
+}
