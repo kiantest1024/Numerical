@@ -2,19 +2,19 @@
 报告生成API路由
 """
 
-from fastapi import APIRouter, HTTPException, Response
-from fastapi.responses import FileResponse, HTMLResponse
-from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
+from typing import Dict, Any
 import json
 import os
 import tempfile
 from datetime import datetime
-import plotly.graph_objects as go
-import plotly.express as px
 import pandas as pd
 
-from ..models.simulation_result import SimulationResult, ChartData
 from ..core.config import settings
+
+# 导入模拟相关的存储
+from .simulation import simulation_results, running_simulations
 
 router = APIRouter()
 
@@ -26,31 +26,83 @@ os.makedirs(REPORTS_DIR, exist_ok=True)
 @router.get("/generate/{simulation_id}")
 async def generate_report(simulation_id: str, format: str = "html"):
     """生成模拟报告"""
-    # 这里需要从模拟结果存储中获取数据
-    # 为了演示，我们先返回一个示例
-    
     if format not in ["html", "json", "excel"]:
         raise HTTPException(status_code=400, detail="不支持的报告格式")
-    
+
     try:
-        # 获取模拟结果（这里需要实际的数据获取逻辑）
-        # result = get_simulation_result(simulation_id)
-        
         if format == "html":
             return await generate_html_report(simulation_id)
         elif format == "json":
             return await generate_json_report(simulation_id)
         elif format == "excel":
             return await generate_excel_report(simulation_id)
-            
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"生成报告失败: {str(e)}")
 
 
-async def generate_html_report(simulation_id: str) -> HTMLResponse:
+async def generate_html_report(simulation_id: str) -> str:
     """生成HTML报告"""
-    
-    # 示例HTML报告模板
+
+    # 获取真实的模拟数据
+    simulation_data = None
+    if simulation_id in simulation_results:
+        simulation_data = simulation_results[simulation_id]
+    elif simulation_id in running_simulations:
+        # 如果模拟还在运行中，获取当前状态
+        engine = running_simulations[simulation_id]
+        simulation_data = {
+            'summary': {
+                'total_rounds': len(engine.round_results),
+                'total_bet_amount': sum(r.total_bet_amount for r in engine.round_results),
+                'total_payout': sum(r.total_payout for r in engine.round_results),
+                'average_rtp': sum(r.rtp for r in engine.round_results) / len(engine.round_results) if engine.round_results else 0,
+                'final_jackpot': engine.jackpot_pool
+            },
+            'round_results': engine.round_results,
+            'game_name': engine.game_rules.name,
+            'start_time': engine.start_time,
+            'status': 'running'
+        }
+
+    # 如果没有找到数据，使用默认值
+    if not simulation_data:
+        simulation_data = {
+            'summary': {
+                'total_rounds': 0,
+                'total_bet_amount': 0,
+                'total_payout': 0,
+                'average_rtp': 0,
+                'final_jackpot': 0
+            },
+            'round_results': [],
+            'game_name': '未知游戏',
+            'start_time': datetime.now(),
+            'status': 'not_found'
+        }
+
+    # 计算详细统计数据
+    summary = simulation_data.get('summary', {})
+    round_results = simulation_data.get('round_results', [])
+
+    # 计算奖级统计
+    prize_stats = {}
+    total_winners = 0
+    if round_results:
+        for round_result in round_results:
+            for prize_stat in round_result.prize_stats:
+                level = prize_stat.level
+                if level not in prize_stats:
+                    prize_stats[level] = {
+                        'name': prize_stat.name,
+                        'winners_count': 0,
+                        'total_amount': 0
+                    }
+                prize_stats[level]['winners_count'] += prize_stat.winners_count
+                prize_stats[level]['total_amount'] += prize_stat.total_amount
+                total_winners += prize_stat.winners_count
+
+    # HTML报告模板
     html_template = """
     <!DOCTYPE html>
     <html lang="zh-CN">
@@ -171,19 +223,35 @@ async def generate_html_report(simulation_id: str) -> HTMLResponse:
             <div class="summary-grid">
                 <div class="summary-card">
                     <h3>总轮数</h3>
-                    <p class="value">1,000</p>
+                    <p class="value">{total_rounds:,}</p>
                 </div>
                 <div class="summary-card">
                     <h3>总投注金额</h3>
-                    <p class="value">¥2,000,000</p>
+                    <p class="value">¥{total_bet_amount:,.2f}</p>
                 </div>
                 <div class="summary-card">
                     <h3>总派奖金额</h3>
-                    <p class="value">¥1,800,000</p>
+                    <p class="value">¥{total_payout:,.2f}</p>
                 </div>
                 <div class="summary-card">
                     <h3>平均RTP</h3>
-                    <p class="value">90.0%</p>
+                    <p class="value">{average_rtp:.2f}%</p>
+                </div>
+                <div class="summary-card">
+                    <h3>最终奖池</h3>
+                    <p class="value">¥{final_jackpot:,.2f}</p>
+                </div>
+                <div class="summary-card">
+                    <h3>总中奖人数</h3>
+                    <p class="value">{total_winners:,}</p>
+                </div>
+                <div class="summary-card">
+                    <h3>游戏名称</h3>
+                    <p class="value">{game_name}</p>
+                </div>
+                <div class="summary-card">
+                    <h3>模拟状态</h3>
+                    <p class="value">{status}</p>
                 </div>
             </div>
             
@@ -209,24 +277,7 @@ async def generate_html_report(simulation_id: str) -> HTMLResponse:
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td>一等奖</td>
-                            <td>5</td>
-                            <td>¥1,500,000</td>
-                            <td>0.0001%</td>
-                        </tr>
-                        <tr>
-                            <td>二等奖</td>
-                            <td>150</td>
-                            <td>¥7,500,000</td>
-                            <td>0.01%</td>
-                        </tr>
-                        <tr>
-                            <td>三等奖</td>
-                            <td>3,000</td>
-                            <td>¥4,500,000</td>
-                            <td>0.2%</td>
-                        </tr>
+                        {prize_table_rows}
                     </tbody>
                 </table>
             </div>
@@ -240,50 +291,95 @@ async def generate_html_report(simulation_id: str) -> HTMLResponse:
         <script>
             // RTP趋势图
             var rtpData = [{
-                x: Array.from({length: 100}, (_, i) => i + 1),
-                y: Array.from({length: 100}, () => Math.random() * 20 + 80),
+                x: {rtp_x_data},
+                y: {rtp_y_data},
                 type: 'scatter',
                 mode: 'lines+markers',
                 name: 'RTP',
-                line: {color: '#007bff'}
+                line: {{color: '#007bff', width: 2}},
+                marker: {{size: 4}}
             }];
-            
-            var rtpLayout = {
+
+            var rtpLayout = {{
                 title: '',
-                xaxis: {title: '轮次'},
-                yaxis: {title: 'RTP (%)'},
+                xaxis: {{title: '轮次', gridcolor: '#f0f0f0'}},
+                yaxis: {{title: 'RTP (%)', gridcolor: '#f0f0f0'}},
                 showlegend: false,
-                margin: {t: 20}
-            };
-            
+                margin: {{t: 20, b: 50, l: 60, r: 20}},
+                plot_bgcolor: 'white',
+                paper_bgcolor: 'white'
+            }};
+
             Plotly.newPlot('rtp-chart', rtpData, rtpLayout);
-            
+
             // 奖级分布图
-            var prizeData = [{
-                x: ['一等奖', '二等奖', '三等奖', '四等奖', '五等奖'],
-                y: [5, 150, 3000, 15000, 50000],
+            var prizeData = [{{
+                x: {prize_x_data},
+                y: {prize_y_data},
                 type: 'bar',
-                marker: {color: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57']}
-            }];
-            
-            var prizeLayout = {
+                marker: {{
+                    color: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#fd79a8', '#fdcb6e'],
+                    line: {{color: 'white', width: 1}}
+                }}
+            }}];
+
+            var prizeLayout = {{
                 title: '',
-                xaxis: {title: '奖级'},
-                yaxis: {title: '中奖人数'},
+                xaxis: {{title: '奖级', gridcolor: '#f0f0f0'}},
+                yaxis: {{title: '中奖人数', gridcolor: '#f0f0f0'}},
                 showlegend: false,
-                margin: {t: 20}
-            };
-            
+                margin: {{t: 20, b: 50, l: 60, r: 20}},
+                plot_bgcolor: 'white',
+                paper_bgcolor: 'white'
+            }};
+
             Plotly.newPlot('prize-chart', prizeData, prizeLayout);
         </script>
     </body>
     </html>
-    """.format(
+    """
+
+    # 准备图表数据
+    rtp_x_data = list(range(1, len(round_results) + 1)) if round_results else [1]
+    rtp_y_data = [r.rtp * 100 for r in round_results] if round_results else [0]
+
+    prize_x_data = [f"{level}等奖" for level in sorted(prize_stats.keys())] if prize_stats else ["无数据"]
+    prize_y_data = [prize_stats[level]['winners_count'] for level in sorted(prize_stats.keys())] if prize_stats else [0]
+
+    # 生成奖级表格行
+    prize_table_rows = ""
+    if prize_stats:
+        for level in sorted(prize_stats.keys()):
+            stat = prize_stats[level]
+            total_players = sum(r.total_players for r in round_results) if round_results else 1
+            probability = (stat['winners_count'] / total_players * 100) if total_players > 0 else 0
+            prize_table_rows += f"<tr><td>{level}等奖 - {stat['name']}</td><td>{stat['winners_count']:,}</td><td>¥{stat['total_amount']:,.2f}</td><td>{probability:.4f}%</td></tr>"
+    else:
+        prize_table_rows = "<tr><td colspan='4' style='text-align: center; color: #999;'>暂无奖级数据</td></tr>"
+
+    # 获取汇总数据
+    summary_data = simulation_data.get('summary', {})
+
+    # 格式化模板
+    formatted_html = html_template.format(
         simulation_id=simulation_id,
-        generate_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        generate_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        total_rounds=summary_data.get('total_rounds', 0),
+        total_bet_amount=summary_data.get('total_bet_amount', 0),
+        total_payout=summary_data.get('total_payout', 0),
+        average_rtp=summary_data.get('average_rtp', 0) * 100,
+        final_jackpot=summary_data.get('final_jackpot', 0),
+        total_winners=total_winners,
+        game_name=simulation_data.get('game_name', '未知游戏'),
+        status=simulation_data.get('status', '未知'),
+        prize_table_rows=prize_table_rows,
+        rtp_x_data=json.dumps(rtp_x_data),
+        rtp_y_data=json.dumps(rtp_y_data),
+        prize_x_data=json.dumps(prize_x_data),
+        prize_y_data=json.dumps(prize_y_data)
     )
-    
-    return HTMLResponse(content=html_template)
+
+    return formatted_html
 
 
 async def generate_json_report(simulation_id: str) -> Dict[str, Any]:
@@ -424,10 +520,10 @@ async def download_report(simulation_id: str, format: str = "html"):
     if format == "html":
         # 生成HTML文件
         html_content = await generate_html_report(simulation_id)
-        
+
         # 创建临时文件
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.html', mode='w', encoding='utf-8')
-        temp_file.write(html_content.body.decode('utf-8'))
+        temp_file.write(html_content)
         temp_file.close()
         
         return FileResponse(

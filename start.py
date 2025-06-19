@@ -7,7 +7,6 @@ import os
 import sys
 import subprocess
 import argparse
-import time
 from pathlib import Path
 
 
@@ -25,7 +24,6 @@ def check_dependencies():
         import fastapi
         import uvicorn
         import numpy
-        import pandas
         print("✅ 后端依赖检查通过")
         return True
     except ImportError as e:

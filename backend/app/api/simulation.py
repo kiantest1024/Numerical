@@ -257,7 +257,21 @@ async def get_simulation_progress(simulation_id: str):
             }
 
         # 最近10轮的RTP趋势
-        recent_rtps = [r.rtp for r in engine.round_results[-10:]]
+        # 计算最近RTP历史（最近20轮的累积RTP）
+        recent_rtps = []
+        if len(engine.round_results) >= 1:
+            # 计算每轮的累积RTP
+            cumulative_bet = 0
+            cumulative_payout = 0
+            for round_result in engine.round_results:
+                cumulative_bet += round_result.total_bet_amount
+                cumulative_payout += round_result.total_payout
+                if cumulative_bet > 0:
+                    round_rtp = cumulative_payout / cumulative_bet
+                    recent_rtps.append(round_rtp)
+
+            # 只保留最近20轮的RTP数据
+            recent_rtps = recent_rtps[-20:] if len(recent_rtps) > 20 else recent_rtps
 
         # 获取奖池阶段信息
         jackpot_phase_info = {}

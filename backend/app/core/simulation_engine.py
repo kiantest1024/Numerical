@@ -1,21 +1,16 @@
-"""
-通用数值模拟引擎
-基于现有lottery_simulator_optimized.py进行重构和扩展
-"""
+"""通用数值模拟引擎"""
 
 import random
 import numpy as np
-import pandas as pd
-import time
 import asyncio
-from typing import List, Dict, Tuple, Optional, Set
+from typing import Dict, Set
 from collections import deque, defaultdict
 import uuid
 from datetime import datetime
 
-from ..models.game_config import GameConfiguration, GameRules, JackpotConfig, PrizeLevel
+from ..models.game_config import GameConfiguration
 from ..models.simulation_result import (
-    SimulationResult, SimulationSummary, RoundResult, 
+    SimulationResult, SimulationSummary, RoundResult,
     PrizeStatistics, SimulationProgress
 )
 

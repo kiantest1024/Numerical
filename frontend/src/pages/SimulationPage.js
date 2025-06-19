@@ -746,20 +746,578 @@ const SimulationPage = () => {
               </div>
             </>
           )}
+
+          {/* 新增：综合RTP统计分析 */}
+          <Divider>综合RTP统计分析</Divider>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={6}>
+              <Statistic
+                title="当前RTP"
+                value={((progress.real_time_stats.current_rtp || 0) * 100).toFixed(2)}
+                suffix="%"
+                prefix={<PercentageOutlined />}
+                valueStyle={{
+                  color: (() => {
+                    const rtp = progress.real_time_stats.current_rtp || 0;
+                    return rtp > 0.85 ? '#52c41a' : rtp > 0.75 ? '#fa8c16' : '#ff4d4f';
+                  })()
+                }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="目标RTP"
+                value="85.00"
+                suffix="%"
+                prefix={<PercentageOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="RTP偏差"
+                value={(() => {
+                  const currentRtp = (progress.real_time_stats.current_rtp || 0) * 100;
+                  const targetRtp = 85.0;
+                  return (currentRtp - targetRtp).toFixed(2);
+                })()}
+                suffix="%"
+                prefix={(() => {
+                  const currentRtp = (progress.real_time_stats.current_rtp || 0) * 100;
+                  const targetRtp = 85.0;
+                  return currentRtp >= targetRtp ? '+' : '';
+                })()}
+                valueStyle={{
+                  color: (() => {
+                    const currentRtp = (progress.real_time_stats.current_rtp || 0) * 100;
+                    const targetRtp = 85.0;
+                    const deviation = Math.abs(currentRtp - targetRtp);
+                    return deviation <= 2 ? '#52c41a' : deviation <= 5 ? '#fa8c16' : '#ff4d4f';
+                  })()
+                }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="RTP稳定度"
+                value={(() => {
+                  const recentRtps = progress.real_time_stats.recent_rtps;
+                  if (!recentRtps || recentRtps.length < 3) return 0;
+                  const variance = recentRtps.reduce((sum, rtp, index, arr) => {
+                    const mean = arr.reduce((s, r) => s + r, 0) / arr.length;
+                    return sum + Math.pow(rtp - mean, 2);
+                  }, 0) / recentRtps.length;
+                  const stability = Math.max(0, 100 - variance * 1000);
+                  return stability.toFixed(1);
+                })()}
+                suffix="/100"
+                valueStyle={{
+                  color: (() => {
+                    const recentRtps = progress.real_time_stats.recent_rtps;
+                    if (!recentRtps || recentRtps.length < 3) return '#999';
+                    const variance = recentRtps.reduce((sum, rtp, index, arr) => {
+                      const mean = arr.reduce((s, r) => s + r, 0) / arr.length;
+                      return sum + Math.pow(rtp - mean, 2);
+                    }, 0) / recentRtps.length;
+                    const stability = Math.max(0, 100 - variance * 1000);
+                    return stability > 80 ? '#52c41a' : stability > 60 ? '#fa8c16' : '#ff4d4f';
+                  })()
+                }}
+              />
+            </Col>
+          </Row>
+
+          {/* RTP分级统计 */}
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={24}>
+              <Card size="small" title="RTP分级统计" style={{ marginBottom: 12 }}>
+                <Row gutter={8}>
+                  <Col span={4}>
+                    <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#f6ffed', borderRadius: '4px', border: '1px solid #b7eb8f' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#52c41a' }}>
+                        {(() => {
+                          const recentRtps = progress.real_time_stats.recent_rtps || [];
+                          const excellentCount = recentRtps.filter(rtp => rtp >= 0.85).length;
+                          return excellentCount;
+                        })()}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>优秀(≥85%)</div>
+                    </div>
+                  </Col>
+                  <Col span={4}>
+                    <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#fff7e6', borderRadius: '4px', border: '1px solid #ffd591' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#fa8c16' }}>
+                        {(() => {
+                          const recentRtps = progress.real_time_stats.recent_rtps || [];
+                          const goodCount = recentRtps.filter(rtp => rtp >= 0.75 && rtp < 0.85).length;
+                          return goodCount;
+                        })()}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>良好(75-85%)</div>
+                    </div>
+                  </Col>
+                  <Col span={4}>
+                    <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#fff2f0', borderRadius: '4px', border: '1px solid #ffb3b3' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#ff4d4f' }}>
+                        {(() => {
+                          const recentRtps = progress.real_time_stats.recent_rtps || [];
+                          const poorCount = recentRtps.filter(rtp => rtp < 0.75).length;
+                          return poorCount;
+                        })()}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>待改进(&lt;75%)</div>
+                    </div>
+                  </Col>
+                  <Col span={4}>
+                    <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#f0f2f5', borderRadius: '4px', border: '1px solid #d9d9d9' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1890ff' }}>
+                        {(() => {
+                          const recentRtps = progress.real_time_stats.recent_rtps || [];
+                          return recentRtps.length;
+                        })()}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>总轮次</div>
+                    </div>
+                  </Col>
+                  <Col span={4}>
+                    <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#f9f0ff', borderRadius: '4px', border: '1px solid #d3adf7' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#722ed1' }}>
+                        {(() => {
+                          const recentRtps = progress.real_time_stats.recent_rtps || [];
+                          if (recentRtps.length === 0) return '0.0';
+                          const excellentCount = recentRtps.filter(rtp => rtp >= 0.85).length;
+                          return ((excellentCount / recentRtps.length) * 100).toFixed(1);
+                        })()}%
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>优秀率</div>
+                    </div>
+                  </Col>
+                  <Col span={4}>
+                    <div style={{ textAlign: 'center', padding: '8px', backgroundColor: '#e6f7ff', borderRadius: '4px', border: '1px solid #91d5ff' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1890ff' }}>
+                        {(() => {
+                          const recentRtps = progress.real_time_stats.recent_rtps || [];
+                          if (recentRtps.length === 0) return '0.0';
+                          const acceptableCount = recentRtps.filter(rtp => rtp >= 0.75).length;
+                          return ((acceptableCount / recentRtps.length) * 100).toFixed(1);
+                        })()}%
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>合格率</div>
+                    </div>
+                  </Col>
+                </Row>
+              </Card>
+            </Col>
+          </Row>
+
+          {/* RTP趋势预测和分析 */}
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={12}>
+              <Card size="small" title="RTP趋势预测" style={{ height: '100%' }}>
+                {progress.real_time_stats.recent_rtps && progress.real_time_stats.recent_rtps.length >= 3 ? (
+                  <div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>趋势方向: </Text>
+                      <Tag color={(() => {
+                        const rtps = progress.real_time_stats.recent_rtps;
+                        const recent3 = rtps.slice(-3);
+                        const trend = recent3[2] - recent3[0];
+                        return trend > 0.02 ? 'green' : trend < -0.02 ? 'red' : 'orange';
+                      })()}>
+                        {(() => {
+                          const rtps = progress.real_time_stats.recent_rtps;
+                          const recent3 = rtps.slice(-3);
+                          const trend = recent3[2] - recent3[0];
+                          return trend > 0.02 ? '上升' : trend < -0.02 ? '下降' : '稳定';
+                        })()}
+                      </Tag>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>预测下轮RTP: </Text>
+                      <Text type={(() => {
+                        const rtps = progress.real_time_stats.recent_rtps;
+                        const recent3 = rtps.slice(-3);
+                        const trend = (recent3[2] - recent3[0]) / 2;
+                        const predicted = recent3[2] + trend;
+                        return predicted >= 0.85 ? 'success' : predicted >= 0.75 ? 'warning' : 'danger';
+                      })()}>
+                        {(() => {
+                          const rtps = progress.real_time_stats.recent_rtps;
+                          const recent3 = rtps.slice(-3);
+                          const trend = (recent3[2] - recent3[0]) / 2;
+                          const predicted = recent3[2] + trend;
+                          return (predicted * 100).toFixed(1) + '%';
+                        })()}
+                      </Text>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>波动幅度: </Text>
+                      <Text>
+                        {(() => {
+                          const rtps = progress.real_time_stats.recent_rtps;
+                          const max = Math.max(...rtps);
+                          const min = Math.min(...rtps);
+                          return ((max - min) * 100).toFixed(2) + '%';
+                        })()}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text strong>收敛性: </Text>
+                      <Tag color={(() => {
+                        const rtps = progress.real_time_stats.recent_rtps;
+                        const recent5 = rtps.slice(-5);
+                        if (recent5.length < 5) return 'default';
+                        const variance = recent5.reduce((sum, rtp, index, arr) => {
+                          const mean = arr.reduce((s, r) => s + r, 0) / arr.length;
+                          return sum + Math.pow(rtp - mean, 2);
+                        }, 0) / recent5.length;
+                        return variance < 0.001 ? 'green' : variance < 0.005 ? 'orange' : 'red';
+                      })()}>
+                        {(() => {
+                          const rtps = progress.real_time_stats.recent_rtps;
+                          const recent5 = rtps.slice(-5);
+                          if (recent5.length < 5) return '数据不足';
+                          const variance = recent5.reduce((sum, rtp, index, arr) => {
+                            const mean = arr.reduce((s, r) => s + r, 0) / arr.length;
+                            return sum + Math.pow(rtp - mean, 2);
+                          }, 0) / recent5.length;
+                          return variance < 0.001 ? '高收敛' : variance < 0.005 ? '中收敛' : '低收敛';
+                        })()}
+                      </Tag>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', color: '#999', padding: '20px' }}>
+                    需要至少3轮数据进行趋势分析
+                  </div>
+                )}
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card size="small" title="RTP质量评估" style={{ height: '100%' }}>
+                <div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>整体评级: </Text>
+                    <Tag color={(() => {
+                      const currentRtp = progress.real_time_stats.current_rtp || 0;
+                      const rtps = progress.real_time_stats.recent_rtps || [];
+                      const stability = rtps.length >= 5 ?
+                        (1 - (Math.max(...rtps) - Math.min(...rtps))) * 100 : 0;
+                      const score = (currentRtp * 100 * 0.7) + (stability * 0.3);
+                      return score >= 80 ? 'green' : score >= 70 ? 'orange' : 'red';
+                    })()} style={{ fontSize: '14px' }}>
+                      {(() => {
+                        const currentRtp = progress.real_time_stats.current_rtp || 0;
+                        const rtps = progress.real_time_stats.recent_rtps || [];
+                        const stability = rtps.length >= 5 ?
+                          (1 - (Math.max(...rtps) - Math.min(...rtps))) * 100 : 0;
+                        const score = (currentRtp * 100 * 0.7) + (stability * 0.3);
+                        return score >= 80 ? 'A级' : score >= 70 ? 'B级' : 'C级';
+                      })()}
+                    </Tag>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>质量得分: </Text>
+                    <Text strong style={{ color: '#1890ff' }}>
+                      {(() => {
+                        const currentRtp = progress.real_time_stats.current_rtp || 0;
+                        const rtps = progress.real_time_stats.recent_rtps || [];
+                        const stability = rtps.length >= 5 ?
+                          (1 - (Math.max(...rtps) - Math.min(...rtps))) * 100 : 0;
+                        const score = (currentRtp * 100 * 0.7) + (stability * 0.3);
+                        return score.toFixed(1);
+                      })()}/100
+                    </Text>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>改进建议: </Text>
+                    <div style={{ fontSize: '12px', color: '#666', marginTop: 4 }}>
+                      {(() => {
+                        const currentRtp = progress.real_time_stats.current_rtp || 0;
+                        const rtps = progress.real_time_stats.recent_rtps || [];
+                        if (currentRtp < 0.75) {
+                          return '• RTP过低，建议调整奖级设置或奖金比例';
+                        } else if (currentRtp > 0.95) {
+                          return '• RTP过高，可能影响盈利能力';
+                        } else if (rtps.length >= 5 && (Math.max(...rtps) - Math.min(...rtps)) > 0.2) {
+                          return '• RTP波动较大，建议优化游戏参数';
+                        } else {
+                          return '• RTP表现良好，继续保持当前设置';
+                        }
+                      })()}
+                    </div>
+                  </div>
+                  <div>
+                    <Text strong>风险提示: </Text>
+                    <div style={{ fontSize: '12px', color: '#666', marginTop: 4 }}>
+                      {(() => {
+                        const currentRtp = progress.real_time_stats.current_rtp || 0;
+                        const targetRtp = 0.85;
+                        const deviation = Math.abs(currentRtp - targetRtp);
+                        if (deviation > 0.1) {
+                          return '⚠️ RTP偏离目标值较大，需要关注';
+                        } else if (deviation > 0.05) {
+                          return '⚡ RTP偏离目标值，建议监控';
+                        } else {
+                          return '✅ RTP在合理范围内';
+                        }
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </Col>
+          </Row>
+
+          {/* 新增：详细财务分析 */}
+          <Divider>财务分析</Divider>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={6}>
+              <Statistic
+                title="销售收入"
+                value={progress.real_time_stats.total_sales_amount || progress.real_time_stats.total_bet_amount || 0}
+                precision={2}
+                prefix={<DollarOutlined />}
+                formatter={(value) => `¥${value.toLocaleString()}`}
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="奖池贡献"
+                value={(() => {
+                  const currentJackpot = progress.real_time_stats.current_jackpot || 0;
+                  const initialJackpot = 800; // 从配置获取，这里暂时硬编码
+                  return Math.max(0, currentJackpot - initialJackpot);
+                })()}
+                precision={2}
+                prefix={<DollarOutlined />}
+                formatter={(value) => `¥${value.toLocaleString()}`}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="卖方返还"
+                value={progress.real_time_stats.total_returned_amount || 0}
+                precision={2}
+                prefix={<DollarOutlined />}
+                formatter={(value) => `¥${value.toLocaleString()}`}
+                valueStyle={{ color: '#722ed1' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="利润率"
+                value={(() => {
+                  const totalBet = progress.real_time_stats.total_bet_amount || 0;
+                  const totalPayout = progress.real_time_stats.total_payout || 0;
+                  return totalBet > 0 ? ((totalBet - totalPayout) / totalBet * 100) : 0;
+                })()}
+                precision={2}
+                suffix="%"
+                prefix={<PercentageOutlined />}
+                valueStyle={{
+                  color: (() => {
+                    const totalBet = progress.real_time_stats.total_bet_amount || 0;
+                    const totalPayout = progress.real_time_stats.total_payout || 0;
+                    const profitRate = totalBet > 0 ? ((totalBet - totalPayout) / totalBet) : 0;
+                    return profitRate > 0.2 ? '#52c41a' : '#ff4d4f';
+                  })()
+                }}
+              />
+            </Col>
+          </Row>
+
+          {/* 新增：游戏统计 */}
+          <Divider>游戏统计</Divider>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col span={6}>
+              <Statistic
+                title="平均每轮玩家"
+                value={(() => {
+                  const totalPlayers = progress.real_time_stats.total_players || 0;
+                  const currentRound = progress.real_time_stats.completed_rounds || progress.current_round || 1;
+                  return Math.round(totalPlayers / currentRound);
+                })()}
+                prefix={<UserOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="平均每人投注"
+                value={(() => {
+                  const totalBet = progress.real_time_stats.total_bet_amount || 0;
+                  const totalPlayers = progress.real_time_stats.total_players || 1;
+                  return totalBet / totalPlayers;
+                })()}
+                precision={2}
+                prefix={<DollarOutlined />}
+                formatter={(value) => `¥${value.toLocaleString()}`}
+                valueStyle={{ color: '#fa8c16' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="平均每轮投注"
+                value={(() => {
+                  const totalBet = progress.real_time_stats.total_bet_amount || 0;
+                  const currentRound = progress.real_time_stats.completed_rounds || progress.current_round || 1;
+                  return totalBet / currentRound;
+                })()}
+                precision={2}
+                prefix={<DollarOutlined />}
+                formatter={(value) => `¥${value.toLocaleString()}`}
+                valueStyle={{ color: '#13c2c2' }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="平均中奖金额"
+                value={(() => {
+                  const totalPayout = progress.real_time_stats.total_payout || 0;
+                  const totalWinners = progress.real_time_stats.total_winners || 1;
+                  return totalPayout / totalWinners;
+                })()}
+                precision={2}
+                prefix={<DollarOutlined />}
+                formatter={(value) => `¥${value.toLocaleString()}`}
+                valueStyle={{ color: '#eb2f96' }}
+              />
+            </Col>
+          </Row>
+
+          {/* 新增：奖池状态分析 */}
+          {progress.real_time_stats.current_jackpot && (
+            <>
+              <Divider>奖池状态分析</Divider>
+              <Row gutter={16} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Statistic
+                    title="奖池增长率"
+                    value={(() => {
+                      const currentJackpot = progress.real_time_stats.current_jackpot || 0;
+                      const initialJackpot = progress.real_time_stats.initial_jackpot_amount || 800; // 从后端获取或默认值
+                      return initialJackpot > 0 ? ((currentJackpot - initialJackpot) / initialJackpot * 100).toFixed(2) : 0;
+                    })()}
+                    suffix="%"
+                    prefix={<PercentageOutlined />}
+                    valueStyle={{
+                      color: (() => {
+                        const currentJackpot = progress.real_time_stats.current_jackpot || 0;
+                        const initialJackpot = progress.real_time_stats.initial_jackpot_amount || 800;
+                        return currentJackpot > initialJackpot ? '#52c41a' : '#ff4d4f';
+                      })()
+                    }}
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title="奖池贡献率"
+                    value={(() => {
+                      const currentRate = progress.real_time_stats.current_contribution_rate;
+                      if (currentRate !== undefined) {
+                        return (currentRate * 100).toFixed(2);
+                      }
+                      // 计算实际贡献率
+                      const currentJackpot = progress.real_time_stats.current_jackpot || 0;
+                      const initialJackpot = progress.real_time_stats.initial_jackpot_amount || 800;
+                      const totalBet = progress.real_time_stats.total_bet_amount || 1;
+                      const contribution = Math.max(0, currentJackpot - initialJackpot);
+                      return totalBet > 0 ? (contribution / totalBet * 100).toFixed(2) : 0;
+                    })()}
+                    suffix="%"
+                    prefix={<PercentageOutlined />}
+                    valueStyle={{ color: '#1890ff' }}
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title="奖池风险指数"
+                    value={(() => {
+                      const currentJackpot = progress.real_time_stats.current_jackpot || 0;
+                      const totalBet = progress.real_time_stats.total_bet_amount || 1;
+                      const riskRatio = currentJackpot / (totalBet * 0.1);
+                      return Math.min(100, Math.max(0, riskRatio * 100));
+                    })()}
+                    precision={1}
+                    suffix="/100"
+                    valueStyle={{
+                      color: (() => {
+                        const currentJackpot = progress.real_time_stats.current_jackpot || 0;
+                        const totalBet = progress.real_time_stats.total_bet_amount || 1;
+                        const riskRatio = currentJackpot / (totalBet * 0.1);
+                        return riskRatio > 0.8 ? '#ff4d4f' : '#52c41a';
+                      })()
+                    }}
+                  />
+                </Col>
+              </Row>
+            </>
+          )}
         </Card>
       )}
 
       {/* 图表数据展示 */}
       {simulation && realtimeData && realtimeData.chart_data && (
-        <Card title="数据图表" style={{ marginBottom: 24 }}>
+        <Card title="数据图表与趋势分析" style={{ marginBottom: 24 }}>
           <Row gutter={16}>
             <Col span={12}>
-              <Card size="small" title="RTP趋势">
+              <Card size="small" title="RTP趋势分析">
                 {realtimeData.chart_data.rtp_trend && realtimeData.chart_data.rtp_trend.length > 0 ? (
-                  <div style={{ textAlign: 'center' }}>
-                    <p>数据点数: {realtimeData.chart_data.rtp_trend.length}</p>
-                    <p>最新RTP: {(realtimeData.chart_data.rtp_trend[realtimeData.chart_data.rtp_trend.length - 1] * 100)?.toFixed(2)}%</p>
-                    <p>平均RTP: {((realtimeData.chart_data.rtp_trend.reduce((a, b) => a + b, 0) / realtimeData.chart_data.rtp_trend.length) * 100).toFixed(2)}%</p>
+                  <div>
+                    <Row gutter={8} style={{ marginBottom: 12 }}>
+                      <Col span={8}>
+                        <Statistic
+                          title="数据点数"
+                          value={realtimeData.chart_data.rtp_trend.length}
+                          valueStyle={{ fontSize: '14px' }}
+                        />
+                      </Col>
+                      <Col span={8}>
+                        <Statistic
+                          title="最新RTP"
+                          value={(realtimeData.chart_data.rtp_trend[realtimeData.chart_data.rtp_trend.length - 1] * 100)?.toFixed(2)}
+                          suffix="%"
+                          valueStyle={{ fontSize: '14px', color: '#1890ff' }}
+                        />
+                      </Col>
+                      <Col span={8}>
+                        <Statistic
+                          title="平均RTP"
+                          value={((realtimeData.chart_data.rtp_trend.reduce((a, b) => a + b, 0) / realtimeData.chart_data.rtp_trend.length) * 100).toFixed(2)}
+                          suffix="%"
+                          valueStyle={{ fontSize: '14px', color: '#52c41a' }}
+                        />
+                      </Col>
+                    </Row>
+                    <Row gutter={8}>
+                      <Col span={8}>
+                        <Statistic
+                          title="最高RTP"
+                          value={(Math.max(...realtimeData.chart_data.rtp_trend) * 100).toFixed(2)}
+                          suffix="%"
+                          valueStyle={{ fontSize: '14px', color: '#f5222d' }}
+                        />
+                      </Col>
+                      <Col span={8}>
+                        <Statistic
+                          title="最低RTP"
+                          value={(Math.min(...realtimeData.chart_data.rtp_trend) * 100).toFixed(2)}
+                          suffix="%"
+                          valueStyle={{ fontSize: '14px', color: '#fa8c16' }}
+                        />
+                      </Col>
+                      <Col span={8}>
+                        <Statistic
+                          title="RTP波动"
+                          value={((Math.max(...realtimeData.chart_data.rtp_trend) - Math.min(...realtimeData.chart_data.rtp_trend)) * 100).toFixed(2)}
+                          suffix="%"
+                          valueStyle={{ fontSize: '14px', color: '#722ed1' }}
+                        />
+                      </Col>
+                    </Row>
                   </div>
                 ) : (
                   <p style={{ textAlign: 'center', color: '#999' }}>暂无数据</p>
@@ -767,27 +1325,245 @@ const SimulationPage = () => {
               </Card>
             </Col>
             <Col span={12}>
-              <Card size="small" title="奖级分布">
+              <Card size="small" title="奖级分布统计">
                 {realtimeData.chart_data.prize_distribution && realtimeData.chart_data.prize_distribution.length > 0 ? (
                   <div>
                     {realtimeData.chart_data.prize_distribution.map((prize, index) => (
-                      <div key={index} style={{ marginBottom: 8 }}>
-                        <Row justify="space-between">
-                          <Col>
+                      <div key={index} style={{ marginBottom: 12 }}>
+                        <Row justify="space-between" align="middle">
+                          <Col span={8}>
                             <Tag color={prize.level === 1 ? 'gold' : prize.level === 2 ? 'silver' : 'blue'}>
                               {prize.name}
                             </Tag>
                           </Col>
-                          <Col>
-                            <Text>{prize.count}人 / ¥{prize.amount.toLocaleString()}</Text>
+                          <Col span={8} style={{ textAlign: 'center' }}>
+                            <Text strong>{prize.count}人</Text>
+                          </Col>
+                          <Col span={8} style={{ textAlign: 'right' }}>
+                            <Text type="success">¥{prize.amount.toLocaleString()}</Text>
+                          </Col>
+                        </Row>
+                        <Row style={{ marginTop: 4 }}>
+                          <Col span={24}>
+                            <div style={{ fontSize: '12px', color: '#666' }}>
+                              平均每人: ¥{(prize.amount / (prize.count || 1)).toLocaleString()} |
+                              占总奖金: {((prize.amount / realtimeData.chart_data.prize_distribution.reduce((sum, p) => sum + p.amount, 0)) * 100).toFixed(1)}%
+                            </div>
                           </Col>
                         </Row>
                       </div>
                     ))}
+                    <Divider style={{ margin: '12px 0' }} />
+                    <Row justify="space-between">
+                      <Col>
+                        <Text strong>总计:</Text>
+                      </Col>
+                      <Col>
+                        <Text strong>
+                          {realtimeData.chart_data.prize_distribution.reduce((sum, p) => sum + p.count, 0)}人 /
+                          ¥{realtimeData.chart_data.prize_distribution.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}
+                        </Text>
+                      </Col>
+                    </Row>
                   </div>
                 ) : (
                   <p style={{ textAlign: 'center', color: '#999' }}>暂无中奖数据</p>
                 )}
+              </Card>
+            </Col>
+          </Row>
+
+          {/* 奖池趋势分析 */}
+          {realtimeData.chart_data.jackpot_trend && realtimeData.chart_data.jackpot_trend.length > 0 && (
+            <Row gutter={16} style={{ marginTop: 16 }}>
+              <Col span={24}>
+                <Card size="small" title="奖池趋势分析">
+                  <Row gutter={16}>
+                    <Col span={6}>
+                      <Statistic
+                        title="初始奖池"
+                        value={realtimeData.chart_data.jackpot_trend[0]}
+                        precision={2}
+                        prefix="¥"
+                        valueStyle={{ fontSize: '14px', color: '#1890ff' }}
+                      />
+                    </Col>
+                    <Col span={6}>
+                      <Statistic
+                        title="当前奖池"
+                        value={realtimeData.chart_data.jackpot_trend[realtimeData.chart_data.jackpot_trend.length - 1]}
+                        precision={2}
+                        prefix="¥"
+                        valueStyle={{ fontSize: '14px', color: '#52c41a' }}
+                      />
+                    </Col>
+                    <Col span={6}>
+                      <Statistic
+                        title="最高奖池"
+                        value={Math.max(...realtimeData.chart_data.jackpot_trend)}
+                        precision={2}
+                        prefix="¥"
+                        valueStyle={{ fontSize: '14px', color: '#f5222d' }}
+                      />
+                    </Col>
+                    <Col span={6}>
+                      <Statistic
+                        title="奖池变化"
+                        value={realtimeData.chart_data.jackpot_trend[realtimeData.chart_data.jackpot_trend.length - 1] - realtimeData.chart_data.jackpot_trend[0]}
+                        precision={2}
+                        prefix={realtimeData.chart_data.jackpot_trend[realtimeData.chart_data.jackpot_trend.length - 1] >= realtimeData.chart_data.jackpot_trend[0] ? '+¥' : '-¥'}
+                        valueStyle={{
+                          fontSize: '14px',
+                          color: realtimeData.chart_data.jackpot_trend[realtimeData.chart_data.jackpot_trend.length - 1] >= realtimeData.chart_data.jackpot_trend[0] ? '#52c41a' : '#f5222d'
+                        }}
+                      />
+                    </Col>
+                  </Row>
+                </Card>
+              </Col>
+            </Row>
+          )}
+        </Card>
+      )}
+
+      {/* 新增：综合分析报告 */}
+      {simulation && progress && progress.real_time_stats && (
+        <Card title="综合分析报告" style={{ marginBottom: 24 }}>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Card size="small" title="模拟进度分析" style={{ height: '100%' }}>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>模拟完成度: </Text>
+                  <Text>{((progress.current_round / progress.total_rounds) * 100).toFixed(1)}%</Text>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>预计剩余时间: </Text>
+                  <Text>
+                    {progress.current_round < progress.total_rounds ?
+                      `约${Math.ceil((progress.total_rounds - progress.current_round) * 0.1)}秒` :
+                      '已完成'
+                    }
+                  </Text>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>模拟效率: </Text>
+                  <Text>{progress.current_round > 0 ? `${(progress.current_round / ((Date.now() - new Date(simulation.start_time)) / 1000)).toFixed(1)} 轮/秒` : '计算中...'}</Text>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>数据质量: </Text>
+                  <Tag color={progress.current_round >= 10 ? 'green' : progress.current_round >= 5 ? 'orange' : 'red'}>
+                    {progress.current_round >= 10 ? '优秀' : progress.current_round >= 5 ? '良好' : '待提升'}
+                  </Tag>
+                </div>
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card size="small" title="风险评估" style={{ height: '100%' }}>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>RTP稳定性: </Text>
+                  <Tag color={(() => {
+                    const recentRtps = progress.real_time_stats.recent_rtps;
+                    if (!recentRtps || recentRtps.length < 5) return 'red';
+                    const volatility = Math.max(...recentRtps) - Math.min(...recentRtps);
+                    return volatility < 0.2 ? 'green' : 'orange';
+                  })()}>
+                    {(() => {
+                      const recentRtps = progress.real_time_stats.recent_rtps;
+                      if (!recentRtps || recentRtps.length < 5) return '数据不足';
+                      const volatility = Math.max(...recentRtps) - Math.min(...recentRtps);
+                      return volatility < 0.2 ? '稳定' : '波动';
+                    })()}
+                  </Tag>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>奖池风险: </Text>
+                  <Tag color={(() => {
+                    const currentJackpot = progress.real_time_stats.current_jackpot || 0;
+                    const totalBet = progress.real_time_stats.total_bet_amount || 1;
+                    const ratio = currentJackpot / totalBet;
+                    return ratio > 0.5 ? 'red' : ratio > 0.3 ? 'orange' : 'green';
+                  })()}>
+                    {(() => {
+                      const currentJackpot = progress.real_time_stats.current_jackpot || 0;
+                      const totalBet = progress.real_time_stats.total_bet_amount || 1;
+                      const ratio = currentJackpot / totalBet;
+                      return ratio > 0.5 ? '高风险' : ratio > 0.3 ? '中风险' : '低风险';
+                    })()}
+                  </Tag>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>盈利能力: </Text>
+                  <Tag color={(() => {
+                    const totalBet = progress.real_time_stats.total_bet_amount || 1;
+                    const totalPayout = progress.real_time_stats.total_payout || 0;
+                    const profitRate = (totalBet - totalPayout) / totalBet;
+                    return profitRate > 0.2 ? 'green' : profitRate > 0.1 ? 'orange' : 'red';
+                  })()}>
+                    {(() => {
+                      const totalBet = progress.real_time_stats.total_bet_amount || 1;
+                      const totalPayout = progress.real_time_stats.total_payout || 0;
+                      const profitRate = (totalBet - totalPayout) / totalBet;
+                      return profitRate > 0.2 ? '优秀' : profitRate > 0.1 ? '良好' : '需改进';
+                    })()}
+                  </Tag>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Text strong>玩家满意度: </Text>
+                  <Tag color={(() => {
+                    const winningRate = progress.real_time_stats.winning_rate || 0;
+                    return winningRate > 0.3 ? 'green' : winningRate > 0.2 ? 'orange' : 'red';
+                  })()}>
+                    {(() => {
+                      const winningRate = progress.real_time_stats.winning_rate || 0;
+                      return winningRate > 0.3 ? '高' : winningRate > 0.2 ? '中' : '低';
+                    })()}
+                  </Tag>
+                </div>
+              </Card>
+            </Col>
+          </Row>
+
+          <Row gutter={16} style={{ marginTop: 16 }}>
+            <Col span={24}>
+              <Card size="small" title="关键指标总结">
+                <Row gutter={16}>
+                  <Col span={6}>
+                    <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f0f2f5', borderRadius: '6px' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1890ff' }}>
+                        {((progress.real_time_stats.current_rtp || 0) * 100).toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>当前RTP</div>
+                    </div>
+                  </Col>
+                  <Col span={6}>
+                    <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f0f2f5', borderRadius: '6px' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#52c41a' }}>
+                        ¥{(progress.real_time_stats.current_jackpot || 0).toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>奖池余额</div>
+                    </div>
+                  </Col>
+                  <Col span={6}>
+                    <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f0f2f5', borderRadius: '6px' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fa8c16' }}>
+                        {((progress.real_time_stats.winning_rate || 0) * 100).toFixed(1)}%
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>中奖率</div>
+                    </div>
+                  </Col>
+                  <Col span={6}>
+                    <div style={{ textAlign: 'center', padding: '12px', backgroundColor: '#f0f2f5', borderRadius: '6px' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#722ed1' }}>
+                        {(() => {
+                          const totalBet = progress.real_time_stats.total_bet_amount || 1;
+                          const totalPayout = progress.real_time_stats.total_payout || 0;
+                          return ((totalBet - totalPayout) / totalBet * 100).toFixed(1);
+                        })()}%
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>利润率</div>
+                    </div>
+                  </Col>
+                </Row>
               </Card>
             </Col>
           </Row>
